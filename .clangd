@@ -1,0 +1,36 @@
+CompileFlags:
+  CompilationDatabase: out/
+  Add: [
+    -D__cpp_concepts=202002L
+    -std=c++23,
+    -xc++,
+    -Wall,
+    -Wextra,
+    -Wshadow,
+    -Wnon-virtual-dtor
+    -pedantic
+    -Wold-style-cast
+    -Wcast-align
+    -Wunused
+    -Woverloaded-virtual
+    -Wpedantic
+    -Wconversion
+    -Wsign-conversion
+    -Wmisleading-indentation
+    -Wduplicated-cond
+    -Wlogical-op
+    -Wnull-dereference
+    -Wuseless-cast
+    -Wdouble-promotion
+    -Wformat=2
+    -Weffc++
+  ]
+
+Diagnostics:
+  ClangTidy:
+    Add: [
+      modernize*
+      performance*
+      readability*
+      cppcoreguidelines*
+    ]

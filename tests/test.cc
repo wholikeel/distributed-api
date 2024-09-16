@@ -1,0 +1,12 @@
+#include <gtest/gtest.h>
+
+
+
+TEST(TestSetup, BasicAssertions) {
+}
+
+
+auto main(int argc, char **argv) -> int {
+    testing::InitGoogleTest(&argc, argv);
+    return RUN_ALL_TESTS();
+}
