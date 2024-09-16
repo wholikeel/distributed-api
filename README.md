@@ -22,7 +22,7 @@ ctest --test-dir out
 
 ## TODO
 
-- [ ] Working Server
+- [x] Working Server
 - [ ] Working Client
 - [ ] Peer-to-Peer network
 - [ ] Merkle-tree for distributed event data.
