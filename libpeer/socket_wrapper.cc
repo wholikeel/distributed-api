@@ -19,6 +19,8 @@ auto accept_conn(int sockfd)
   return std::make_pair(new_fd, their_addr);
 }
 
+
+
 auto get_in_addr(struct sockaddr_storage *storage)
     -> std::expected<std::string, int> {
   auto *sockaddr = std::bit_cast<struct sockaddr *>(storage);
@@ -40,10 +42,10 @@ auto get_in_addr(struct sockaddr_storage *storage)
   return std::string(net_buffer.cbegin(), net_buffer.cend());
 }
 
-auto get_addr_info(std::string_view port, struct addrinfo hints)
+auto get_addr_info(std::string_view hostname, std::string_view port, struct addrinfo hints)
     -> std::expected<struct addrinfo *, int> {
   struct addrinfo *servinfo = nullptr;
-  int status = getaddrinfo(nullptr, port.data(), &hints, &servinfo);
+  int status = getaddrinfo(hostname.data(), port.data(), &hints, &servinfo);
   if (status != 0) {
     return std::unexpected(status);
   }

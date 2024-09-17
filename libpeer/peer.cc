@@ -24,111 +24,14 @@ auto sigchld_handler(int pid) {
   errno = saved_errno;
 }
 
-// constexpr auto send(int file_descriptor, std::string_view message,
-//                     int flags = 0) {
-//   return send(file_descriptor, message.data(), message.length(), flags);
-// }
-//
-// constexpr auto get_in_addr(struct sockaddr_storage *storage)
-//     -> std::expected<std::string, int> {
-//   auto *sockaddr = std::bit_cast<struct sockaddr *>(storage);
-//   std::array<char, INET6_ADDRSTRLEN> net_buffer{};
-//   switch (sockaddr->sa_family) {
-//   case AF_INET:
-//     inet_ntop(storage->ss_family,
-//               &std::bit_cast<sockaddr_in *>(sockaddr)->sin_addr,
-//               net_buffer.data(), net_buffer.size());
-//     break;
-//   case AF_INET6:
-//     inet_ntop(storage->ss_family,
-//               &std::bit_cast<sockaddr_in6 *>(sockaddr)->sin6_addr,
-//               net_buffer.data(), net_buffer.size());
-//     break;
-//   default:
-//     return std::unexpected(sockaddr->sa_family);
-//   }
-//   return std::string(net_buffer.cbegin(), net_buffer.cend());
-// }
-//
-// auto accept_conn(int sockfd)
-//     -> std::optional<std::pair<int, struct sockaddr_storage>> {
-//   struct sockaddr_storage their_addr {};
-//   socklen_t sin_size = sizeof(their_addr);
-//   auto new_fd =
-//       accept(sockfd, std::bit_cast<struct sockaddr *>(&their_addr), &sin_size);
-//   if (new_fd == -1) {
-//     std::cout << "accept returned -1\n";
-//     return std::nullopt;
-//   }
-//   return std::make_pair(new_fd, their_addr);
-// }
-//
-// constexpr auto get_addr_info(std::string_view port, struct addrinfo hints)
-//     -> std::expected<struct addrinfo *, int> {
-//   struct addrinfo *servinfo = nullptr;
-//   int status = getaddrinfo(nullptr, port.data(), &hints, &servinfo);
-//   if (status != 0) {
-//     return std::unexpected(status);
-//   }
-//   return servinfo;
-// }
-//
-// constexpr auto create_socket(struct addrinfo *sockaddr)
-//     -> std::expected<int, SockError> {
-//   auto sockfd =
-//       socket(sockaddr->ai_family, sockaddr->ai_socktype, sockaddr->ai_protocol);
-//   if (sockfd == -1) {
-//     return std::unexpected(SockError::CREATION);
-//   }
-//   return sockfd;
-// }
-//
-// template <typename T>
-// constexpr auto set_sock_opt(int sockfd, int level, int optname, T *value)
-//     -> std::expected<int, SockError> {
-//   auto status = setsockopt(sockfd, level, optname, value, sizeof(T));
-//   if (status == -1) {
-//     return std::unexpected(SockError::SET_OPTION);
-//   }
-//   return sockfd;
-// }
-//
-// auto bind_fd(int sockfd, const struct addrinfo *info)
-//     -> std::expected<int, SockError> {
-//   auto status = bind(sockfd, info->ai_addr, info->ai_addrlen);
-//   if (status == -1) {
-//     return std::unexpected(SockError::BIND);
-//   }
-//   return sockfd;
-// }
-//
-// // TODO: needs refactor
-// auto get_valid_address(struct addrinfo *addrinfo, int *can_reuse)
-//     -> std::expected<int, SockError> {
-//   for (auto *proto = addrinfo; proto != nullptr; proto = proto->ai_next) {
-//     auto sockfd = create_socket(proto);
-//     if (!sockfd.has_value()) {
-//       freeaddrinfo(addrinfo);
-//       return std::unexpected(SockError::CREATION);
-//     }
-//     auto configured_fd =
-//         set_sock_opt(sockfd.value(), SOL_SOCKET, SO_REUSEADDR, can_reuse);
-//     if (!configured_fd.has_value()) {
-//       freeaddrinfo(addrinfo);
-//       return std::unexpected(SockError::SET_OPTION);
-//     };
-//     auto bound_fd = bind_fd(sockfd.value(), proto);
-//
-//     if (bound_fd.has_value()) {
-//       freeaddrinfo(addrinfo);
-//       return sockfd.value();
-//     }
-//     close(sockfd.value());
-//     break;
-//   }
-//   freeaddrinfo(addrinfo);
-//   return std::unexpected(SockError::NONE_VALID);
-// }
+// TODO: change to C++ style, merge with `socket_wrapper` vers
+auto get_in_addr(struct sockaddr *sockaddr) -> void * {
+  if (sockaddr->sa_family == AF_INET) {
+    return &(((struct sockaddr_in *)sockaddr)->sin_addr);
+  }
+
+  return &(((struct sockaddr_in6 *)sockaddr)->sin6_addr);
+}
 
 Peer::Peer(std::string_view port, unsigned int back_log)
     : _port(port), _back_log(back_log) {}
@@ -141,10 +44,10 @@ constexpr auto Peer::_get_hints(int ai_family, int ai_socktype, int ai_flags)
   return hints;
 }
 
-auto Peer::_start_listening() {
+auto Peer::_start_server() {
   auto hints = _get_hints(AF_UNSPEC, SOCK_STREAM, AI_PASSIVE);
 
-  auto server_info = get_addr_info(_port, hints);
+  auto server_info = get_addr_info("0.0.0.0", _port, hints);
   if (!server_info.has_value()) {
     std::cout << "getaddrinfo: " << gai_strerror(server_info.error()) << '\n';
   }
@@ -182,7 +85,7 @@ auto Peer::_start_listening() {
     }
     auto new_addr = conn.value();
     auto new_fd = conn.value().first;
-    auto their_addr = conn.value().second; 
+    auto their_addr = conn.value().second;
 
     if (new_fd == -1) {
       perror("accept");
@@ -208,7 +111,62 @@ auto Peer::_start_listening() {
   return 0;
 }
 
+auto Peer::_client_connect(const std::string &address,
+                           const std::string &port) {
+  auto hints = _get_hints(AF_UNSPEC, SOCK_STREAM, 0);
+
+  auto server_info = get_addr_info(address, port, hints);
+  if (!server_info.has_value()) {
+    std::cout << "getaddrinfo: " << gai_strerror(server_info.error()) << '\n';
+  }
+
+  int sockfd = -1;
+  struct addrinfo *proto = nullptr;
+  for (proto = server_info.value(); proto != nullptr; proto = proto->ai_next) {
+    auto sock_resp = create_socket(proto);
+    if (!sock_resp.has_value()) {
+      perror("client: socket");
+      continue;
+    }
+    sockfd = sock_resp.value();
+
+    if (connect(sockfd, proto->ai_addr, proto->ai_addrlen) == -1) {
+      close(sockfd);
+      perror("client: connect");
+      continue;
+    }
+    break;
+  }
+
+  if (proto == nullptr) {
+    std::cout << "client: failed to connect\n";
+    return;
+  }
+
+  std::array<char, INET6_ADDRSTRLEN> net_buffer{};
+  inet_ntop(proto->ai_family, get_in_addr((struct sockaddr *)proto->ai_addr),
+            net_buffer.data(), net_buffer.size());
+
+  auto name = std::string(net_buffer.cbegin(), net_buffer.cend());
+
+  std::cout << "client: connecting to " << name << '\n';
+
+  freeaddrinfo(server_info.value());
+
+
+  const int max_data_size = 100;
+  std::array<char, max_data_size> buffer {0};
+  ssize_t nbytes = 0;
+  if ((nbytes = recv(sockfd, buffer.data(), max_data_size - 1, 0)) == -1) {
+    perror("recv");
+    exit(1);
+  }
+  buffer.at(nbytes) = '\0';
+
+  close(sockfd);
+}
+
 auto Peer::start() -> void {
-  auto ret = _start_listening();
+  auto ret = _start_server();
   std::cout << ret << '\n';
 }

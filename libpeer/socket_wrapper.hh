@@ -17,7 +17,14 @@
 #include <unistd.h>
 #include <utility>
 
-#include <peer.hh>
+
+
+enum class SockError {
+    CREATION,
+    SET_OPTION,
+    BIND,
+    NONE_VALID
+};
 
 auto send(int file_descriptor, std::string_view message,
                     int flags = 0) -> ssize_t;
@@ -28,7 +35,7 @@ auto get_in_addr(struct sockaddr_storage *storage)
 auto accept_conn(int sockfd)
     -> std::optional<std::pair<int, struct sockaddr_storage>>;
 
-auto get_addr_info(std::string_view port, struct addrinfo hints)
+auto get_addr_info(std::string_view hostname, std::string_view port, struct addrinfo hints)
     -> std::expected<struct addrinfo *, int>;
 
 auto create_socket(struct addrinfo *sockaddr)

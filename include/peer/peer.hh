@@ -5,12 +5,6 @@
 #include <vector>
 
 
-enum class SockError {
-    CREATION,
-    SET_OPTION,
-    BIND,
-    NONE_VALID
-};
 
 
 class Peer {
@@ -24,7 +18,9 @@ private:
     std::string_view _port;
     unsigned int _back_log;
 
-    auto _start_listening();
+    auto _start_server();
+    auto _client_connect(const std::string &address, const std::string &port);
+
 
     constexpr auto _get_hints(int ai_family, int ai_socktype, int ai_flags) -> struct addrinfo;
 };
