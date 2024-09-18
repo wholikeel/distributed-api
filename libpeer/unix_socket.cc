@@ -13,21 +13,25 @@
 UnixSocket::UnixSocket(std::string socket_path, int backlog)
     : _server_fd(-1), _backlog(backlog), _socket_path(std::move(socket_path)) {}
 
+UnixSocket::~UnixSocket() {
+    stop();
+}
 
 auto UnixSocket::start() -> void {
-    _server_thread = std::thread(&UnixSocket::_start_server, this);
+  _server_thread = std::thread(&UnixSocket::_start_server, this);
 }
 
 auto UnixSocket::stop() -> void {
-    _is_listening = false;
-    _server_thread.join();
+  _is_listening = false;
+  _server_thread.join();
 }
 
 auto UnixSocket::_start_server() -> void {
 
   _server_fd = socket(AF_UNIX, SOCK_STREAM, 0);
-  if (_server_fd != -1) {
-    std::osyncstream(std::cerr) << "COULD NOT CREATE SOCKET: " << strerror(errno) << '\n';
+  if (_server_fd == -1) {
+    std::osyncstream(std::cerr)
+        << "COULD NOT CREATE SOCKET: " << strerror(errno) << '\n';
     return;
   }
 
@@ -40,12 +44,14 @@ auto UnixSocket::_start_server() -> void {
 
   if (bind(_server_fd, std::bit_cast<struct sockaddr *>(&address),
            sizeof(address)) == -1) {
-    std::osyncstream(std::cerr) << "UNIXSOCKET BIND ERROR: " << strerror(errno) << '\n';
+    std::osyncstream(std::cerr)
+        << "UNIXSOCKET BIND ERROR: " << strerror(errno) << '\n';
     close(_server_fd);
   }
 
   if (listen(_server_fd, _backlog) == -1) {
-    std::osyncstream(std::cerr) << "COULD NOT LISTEN: " << strerror(errno) << '\n';
+    std::osyncstream(std::cerr)
+        << "COULD NOT LISTEN: " << strerror(errno) << '\n';
     close(_server_fd);
   }
 
@@ -68,4 +74,5 @@ auto UnixSocket::_add_client(int file_descriptor) -> void {
   std::lock_guard<std::mutex> lock(_clients_mutex);
   _clients.push_back(file_descriptor);
   std::osyncstream(std::cout) << "Added client: " << file_descriptor << '\n';
+  auto nbytes = _fd_write<256>(file_descriptor, "hello from c++");
 }
