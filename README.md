@@ -1,8 +1,9 @@
 # DAPI
 
-## Running
+>[!WARNING]
+>does not work lol
 
-### Builing
+## Building
 
 To build the binaries run the following.
 
@@ -11,7 +12,7 @@ cmake -S . -B out
 cmake --build out
 ```
 
-### Testing
+## Testing
 
 To test, once built run the following.
 
