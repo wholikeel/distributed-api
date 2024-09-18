@@ -1,0 +1,29 @@
+cabal-version:          3.4
+name:                   http-p2p-proxy
+version:                0.0.0.1
+license:                MIT
+license-file:           LICENSE
+author:                 Michael LePera
+maintainer:             mail@michaellepera.xyz
+build-type:             Simple
+
+
+common warnings
+    ghc-options:        -Wall
+
+library
+    import:             warnings
+    exposed-modules:    UNIXPeer
+    build-depends:      base ^>=4.18.2.1
+    hs-source-dirs:     lib
+    default-language:   Haskell2010
+
+executable http-p2p-proxy
+    import:             warnings
+    main-is:            Main.hs
+    build-depends:
+        base ^>=4.18.2.1,
+        http-p2p-proxy
+    hs-source-dirs:     app
+    default-language:   Haskell2010
+        
