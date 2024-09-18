@@ -5,6 +5,7 @@ add_library(
     peer.cc
     addr_iter.cc
     socket_wrapper.cc socket_wrapper.hh
+    unix_socket.cc unix_socket.hh
 )
 
 target_include_directories(peer PUBLIC ../include/peer)
