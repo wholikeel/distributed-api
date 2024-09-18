@@ -17,9 +17,6 @@
       {
         formatter = pkgs.nixfmt-rfc-style;
         devShells =
-          let
-            hp = pkgs.haskellPackages;
-          in
           {
             default = pkgs.mkShell {
               name = "code-jam-DAPI";
@@ -32,14 +29,7 @@
                 gtest
 
                 gdb
-              ];
-            };
-            hask = hp.shellFor {
-              packages = p: [ ];
-              withHoogle = true;
-              buildInputs = with hp; [
-                haskell-language-server
-                cabal-install
+                python312.withPackages (ps: with ps; [ flask ])
               ];
             };
           };
