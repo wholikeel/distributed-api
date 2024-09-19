@@ -1,19 +1,23 @@
 #!/usr/bin/env python312
 
-import threading
-from flask import Flask, render_template
-from flask_socketio import SocketIO
-
-import asyncio
 import argparse
-import sys
+import asyncio
+import logging
 import os
+import signal
 import socket
-from abc import ABC, abstractmethod
-from typing import NoReturn, cast, Annotated, override
+import sys
+import threading
+import types
 
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
+from flask import Flask, render_template
+from flask_socketio import SocketIO
+from logging.handlers import SysLogHandler
+from typing import NoReturn, cast, Annotated, override
+
 
 app = Flask(__name__)
 socketio = SocketIO(app)
@@ -29,45 +33,53 @@ class Args:
     host: Annotated[str, "Listening host address"]
 
 
-@app.route('/')
+def get_logger(level: int | str) -> logging.Logger:
+    handler = SysLogHandler()
+    formatter = logging.Formatter("client: %(message)s")
+    logger = logging.getLogger(__name__)
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+    logger.setLevel(level)
+    return logger
+
+
+@app.route("/")
 def index() -> str:
     return render_template("index.html")
 
-def main() -> int:
-    parser = argparse.ArgumentParser(
-            prog="http-p2p-proxy",
-            description="Proxy for accessing P2P network via HTTP.",
-            epilog="http-p2p-proxy - mail@michaellepera.xyz"
-            )
 
-    _ = parser.add_argument(
-            "-p", "--port",
-            type=int,
-            required=True,
-            )
-    _ = parser.add_argument(
-            "-h", "--host",
-            required=True,
-            )
+class RuntimeHandler:
+    def __init__(self, logger: logging.Logger) -> None:
+        self._logger = logger
+        self._stopping = False
+        self._lock = threading.Lock()
 
-    args = cast(Args, cast(object, parser.parse_args()))
+    def __call__(
+        self, sig: signal.Signals | int, frame: types.FrameType | None
+    ) -> None:
+        with self._lock:
+            self._stopping = True
 
-
-    app.run(host=args.host, port=args.port)
-    return 0
+    @property
+    def is_running(self) -> bool:
+        with self._lock:
+            return not self._stopping
 
 
 class PeerNetwork(ABC):
-
     @abstractmethod
     async def get_all_nodes(self) -> None: ...
 
 
-
-
 class UnixSockPeerNetwork(PeerNetwork):
-
-    def __init__(self, sock_path: str):
+    def __init__(
+        self,
+        sock_path: str,
+        logger: logging.Logger,
+        runtime_handler: RuntimeHandler,
+    ):
+        self._logger = logger
+        self._runtime_handler = runtime_handler
         self._connected = False
         self._thread = None
 
@@ -76,48 +88,89 @@ class UnixSockPeerNetwork(PeerNetwork):
         self._sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
 
     def start(self):
-
-        self._sock.connect(sock_path)
+        self._sock.connect(self._sock_path)
         self._thread = threading.Thread(target=self.listen)
         self._thread.daemon = True
         self._thread.start()
-        print("Started daemon listener thread")
-    
+        logging.info("started daemon listener thread.")
 
     def listen(self) -> None:
-        while True:
+        while self._runtime_handler.is_running:
             try:
-                data = self._sock.recv(1024)
-                if not data:
+                message = self._read_msg()
+                if not message:
                     break
-                socketio.emit("p2p-update", {"data": data.decode()}) # pyright: ignore[reportUnknownMemberType]
-                print(f"Received: {data.decode()}")
+                socketio.emit("p2p-update", {"data": message.decode()})  # pyright: ignore[reportUnknownMemberType]
             except Exception:
-                print("err")
+                logging.warning("could not recieve data from socket.")
+        self._logger.info("listener shutting down.")
+
+    def _read_msg(
+        self, max_chunk_count: int = 5, chunk_size: int = 512
+    ) -> bytearray:
+        message = bytearray()
+        count = max_chunk_count
+        while not message.endswith(b"\n") and count > 0:
+            if not self._runtime_handler.is_running:
+                break
+            count -= 1
+            data = self._sock.recv(chunk_size)
+            message += data
+        self._logger.info(f"read: {message}")
+        return message
 
     async def write(self, message: str):
         self._sock.sendall(message.encode())
 
     @override
-    async def get_all_nodes(self) -> None:
-        ...
+    async def get_all_nodes(self) -> None: ...
 
 
-if __name__ == "__main__":
-    # sys.exit(main())
-    runtime_dir = os.getenv("XDG_RUNTIME_DIR") 
+def main() -> int:
+
+    parser = argparse.ArgumentParser(
+        prog="http-p2p-proxy",
+        description="Proxy for accessing P2P network via HTTP.",
+        epilog="http-p2p-proxy - mail@michaellepera.xyz",
+    )
+
+    _ = parser.add_argument(
+        "--port",
+        type=int,
+        required=True,
+    )
+    _ = parser.add_argument(
+        "--host",
+        required=True,
+    )
+
+    args = cast(Args, cast(object, parser.parse_args()))
+
+    logger = get_logger(logging.ERROR)
+
+    signal_handler = RuntimeHandler(logger)
+    _ = signal.signal(signal.SIGTERM, signal_handler)
+    _ = signal.signal(signal.SIGINT, signal_handler)
+
+    logger.info("Clients starting")
+
+    runtime_dir = os.getenv("XDG_RUNTIME_DIR")
     if runtime_dir is None:
-        print("runtime dir not set")
-        sys.exit(1)
+        logger.error("XDG_RUNTIME_DIR not set.")
+        return 1
 
     sock_path = os.path.join(runtime_dir, ".test.sock")
 
-    sock_proxy = UnixSockPeerNetwork(sock_path)
+    if not os.path.exists(sock_path):
+        logger.error("Local P2P peer is not running with an active unix-socket server")
+        return 1
 
-    sock_proxy.start()
+    sock_client = UnixSockPeerNetwork(sock_path, logger, signal_handler)
+    sock_client.start()
 
-    socketio.run(app) # pyright: ignore[reportUnknownMemberType]
+    socketio.run(app, host=args.host, port=args.port)  # pyright: ignore[reportUnknownMemberType]
+    return 0
 
 
-
-
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "code-jam"
+version = "0.0.1"
+requires-python = ">=3.12"
+readme = "README.md"
+license = { file = "LICENSE" }
+
+[projects.scripts]
+http-p2p-proxy = "scripts.http-p2p-proxy.main:main"
+
+
+[tool.ruff]
+line-length = 79
+indent-width = 4
+target-version = "py312"
+exclude = [
+    ".git",
+    "include",
+    "libpeer",
+    "out",
+    "result",
+    "src",
+    "tests",
+]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+
+[tool.basedpright]
+pythonVersion = "3.12"
+pythonPath = "python312"
+
