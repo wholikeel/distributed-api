@@ -34,7 +34,8 @@ class Args:
 
 
 def get_logger(level: int | str) -> logging.Logger:
-    handler = SysLogHandler()
+    # handler = SysLogHandler()
+    handler = logging.StreamHandler(sys.stdout)
     formatter = logging.Formatter("client: %(message)s")
     logger = logging.getLogger(__name__)
     handler.setFormatter(formatter)
@@ -150,7 +151,7 @@ def main() -> int:
 
     signal_handler = RuntimeHandler(logger)
     _ = signal.signal(signal.SIGTERM, signal_handler)
-    _ = signal.signal(signal.SIGINT, signal_handler)
+    # _ = signal.signal(signal.SIGINT, signal_handler)
 
     logger.info("Clients starting")
 
@@ -166,7 +167,11 @@ def main() -> int:
         return 1
 
     sock_client = UnixSockPeerNetwork(sock_path, logger, signal_handler)
-    sock_client.start()
+    try:
+        sock_client.start()
+    except ConnectionRefusedError:
+        logger.error("Could not connect to server, ensure server is running.")
+        return 1
 
     socketio.run(app, host=args.host, port=args.port)  # pyright: ignore[reportUnknownMemberType]
     return 0
