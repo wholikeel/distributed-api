@@ -35,6 +35,9 @@ auto get_in_addr(struct sockaddr_storage *storage)
 auto accept_conn(int sockfd)
     -> std::optional<std::pair<int, struct sockaddr_storage>>;
 
+auto accept4_conn(int sockfd, int flags)
+    -> std::optional<std::pair<int, struct sockaddr_storage>>;
+
 auto get_addr_info(std::string_view hostname, std::string_view port, struct addrinfo hints)
     -> std::expected<struct addrinfo *, int>;
 

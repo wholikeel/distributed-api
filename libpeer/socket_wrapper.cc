@@ -13,7 +13,19 @@ auto accept_conn(int sockfd)
   auto new_fd =
       accept(sockfd, std::bit_cast<struct sockaddr *>(&their_addr), &sin_size);
   if (new_fd == -1) {
-    std::cout << "accept returned -1\n";
+    return std::nullopt;
+  }
+  return std::make_pair(new_fd, their_addr);
+}
+
+
+auto accept4_conn(int sockfd, int flags)
+    -> std::optional<std::pair<int, struct sockaddr_storage>> {
+  struct sockaddr_storage their_addr {};
+  socklen_t sin_size = sizeof(their_addr);
+  auto new_fd =
+      accept4(sockfd, std::bit_cast<struct sockaddr *>(&their_addr), &sin_size, flags);
+  if (new_fd == -1) {
     return std::nullopt;
   }
   return std::make_pair(new_fd, their_addr);
