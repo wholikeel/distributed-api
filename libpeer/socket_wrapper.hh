@@ -14,8 +14,10 @@
 #include <addr_iter.hh>
 #include <array>
 #include <string>
+#include <string_view>
 #include <unistd.h>
 #include <utility>
+#include <variant>
 
 
 
@@ -54,5 +56,8 @@ auto bind_fd(int sockfd, const struct addrinfo *info)
 // TODO: needs api change
 auto get_valid_address(struct addrinfo *addrinfo, int *can_reuse)
     -> std::expected<int, SockError>;
+
+
+auto create_tcp_server(char **addr, size_t addr_size, int port) -> int;
 
 #endif // SOCKET_WRAPPER_HH
