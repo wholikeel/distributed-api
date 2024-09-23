@@ -25,6 +25,7 @@
             packages = with pkgs; [
               # CMAKE add py311 into devshell?????
               cmake
+              just
               # cmake-format
               # cmake-language-server
               clang-tools
