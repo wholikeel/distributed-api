@@ -58,6 +58,7 @@ auto get_valid_address(struct addrinfo *addrinfo, int *can_reuse)
     -> std::expected<int, SockError>;
 
 
-auto create_tcp_server(char **addr, size_t addr_size, int port) -> int;
+auto create_tcp_listener(std::string_view addr, std::string_view port,
+                         int backlog) -> int;
 
 #endif // SOCKET_WRAPPER_HH
