@@ -1,20 +1,8 @@
-#include <arpa/inet.h>
-#include <csignal>
-#include <expected>
-#include <iostream>
-#include <netdb.h>
-#include <optional>
+#include <memory>
 #include <peer.hh>
-#include <sys/socket.h>
-#include <sys/types.h>
-#include <sys/wait.h>
 
-#include <addr_iter.hh>
-#include <array>
-#include <string>
-#include <unistd.h>
-#include <utility>
-
+#include "epoll_event_loop.hh"
+#include "epoll_wrapper.hh"
 #include "socket_wrapper.hh"
 
 auto sigchld_handler(int pid) {
@@ -33,8 +21,10 @@ auto get_in_addr(struct sockaddr *sockaddr) -> void * {
   return &(((struct sockaddr_in6 *)sockaddr)->sin6_addr);
 }
 
-Peer::Peer(std::string_view port, unsigned int back_log)
-    : _port(port), _back_log(back_log) {}
+Peer::Peer(std::string port, int back_log)
+    : _port(std::move(port)), _back_log(back_log) {}
+
+Peer::~Peer() { stop(); }
 
 constexpr auto Peer::_get_hints(int ai_family, int ai_socktype, int ai_flags)
     -> struct addrinfo {
@@ -44,26 +34,19 @@ constexpr auto Peer::_get_hints(int ai_family, int ai_socktype, int ai_flags)
   return hints;
 }
 
-auto Peer::_start_server() {
-  auto hints = _get_hints(AF_UNSPEC, SOCK_STREAM, AI_PASSIVE);
 
-  auto server_info = get_addr_info("0.0.0.0", _port, hints);
-  if (!server_info.has_value()) {
-    std::cout << "getaddrinfo: " << gai_strerror(server_info.error()) << '\n';
-  }
-  auto can_reuse = 1; // TODO: should support N options
-  auto address_data = get_valid_address(server_info.value(), &can_reuse);
+auto accept_tcp_connection() -> void {
+    std::osyncstream(std::cout) << "client connected\n";
+}
 
-  if (!address_data.has_value()) {
-    std::cout << "Failed to bind\n";
-    return 1;
+auto Peer::_start_server() -> void {
+  if (_is_listening) {
+    std::osyncstream(std::cerr) << "peer: cannot start, alreading listening\n";
   }
 
-  auto sockfd = address_data.value();
-
-  if (listen(sockfd, 10) == -1) {
-    perror("listen");
-    exit(1);
+  _server_fd = create_tcp_listener("0.0.0.0", _port, _back_log);
+  if (_server_fd == -1) {
+    return;
   }
 
   // Cull abandoned childred
@@ -74,41 +57,35 @@ auto Peer::_start_server() {
 
   if (sigaction(SIGCHLD, &sig_action, nullptr) == -1) {
     perror("sigaction");
-    return 1;
+    return;
   }
 
-  std::cout << "server: waiting for connections...\n";
-  while (true) {
-    auto conn = accept_conn(sockfd);
-    if (!conn.has_value()) {
-      continue;
-    }
-    auto new_addr = conn.value();
-    auto new_fd = conn.value().first;
-    auto their_addr = conn.value().second;
-
-    if (new_fd == -1) {
-      perror("accept");
-      continue;
-    }
-
-    auto addr_type = get_in_addr(&their_addr);
-    if (!addr_type.has_value()) {
-      std::cout << "Unknown address type\n";
-      continue;
-    }
-    std::cout << "server: got connection from " << addr_type.value() << '\n';
-    if (fork() == 0) {
-      close(sockfd);
-      if (send(new_fd, "Hello, world!\n") == -1) {
-        perror("send");
-      }
-      close(new_fd);
-      exit(0);
-    }
-    close(new_fd);
+  if ((_epoll_fd = epoll_create1(EPOLL_CLOEXEC)) == -1) {
+    return;
   }
-  return 0;
+
+  _event_loop = std::make_shared<EpollEventLoop>(_epoll_fd);
+    
+
+  auto *tcp = new TcpConnectionHandler(_event_loop, _server_fd);
+  _event_loop->add_event_fd(_server_fd, tcp);
+
+  _is_listening = true;
+  while (_is_listening) {
+    _event_loop->start(&_is_listening);
+  }
+
+  delete tcp;
+}
+
+
+auto Peer::_accept_client(int sock) -> std::optional<int> {
+  auto client_fd = accept4_conn(sock, SOCK_CLOEXEC | SOCK_NONBLOCK);
+  if (!client_fd.has_value()) {
+    std::osyncstream(std::cerr) << "could not accept client\n";
+    return std::nullopt;
+  }
+  return client_fd.value().first;
 }
 
 auto Peer::_client_connect(const std::string &address,
@@ -153,9 +130,10 @@ auto Peer::_client_connect(const std::string &address,
 
   freeaddrinfo(server_info.value());
 
+  _routing_table.push_back(name);
 
   const int max_data_size = 100;
-  std::array<char, max_data_size> buffer {0};
+  std::array<char, max_data_size> buffer{0};
   ssize_t nbytes = 0;
   if ((nbytes = recv(sockfd, buffer.data(), max_data_size - 1, 0)) == -1) {
     perror("recv");
@@ -166,7 +144,46 @@ auto Peer::_client_connect(const std::string &address,
   close(sockfd);
 }
 
+auto Peer::_create_epoll(int socket_fd) const -> void {
+  auto efd = epoll_create1(EPOLL_CLOEXEC);
+  if (efd == -1) {
+    std::osyncstream(std::cerr) << "epoll create error\n";
+    return;
+  }
+}
+
+auto Peer::_add_to_epoll(int client_fd) const -> void {
+  struct epoll_event epoll_event {};
+  epoll_event.events = EPOLLIN;
+  epoll_event.data.fd = client_fd;
+  if (epoll_ctl(_epoll_fd, EPOLL_CTL_ADD, client_fd, &epoll_event) == -1) {
+    std::osyncstream(std::cerr) << "epoll add error\n";
+  }
+};
+
+auto Peer::_remove_from_epoll(int client_fd) const -> void {
+  struct epoll_event epoll_event {};
+  epoll_event.events = EPOLLIN;
+  epoll_event.data.fd = client_fd;
+  if (epoll_ctl(_epoll_fd, EPOLL_CTL_DEL, client_fd, &epoll_event) == -1) {
+    std::osyncstream(std::cerr) << "epoll remove error\n";
+  }
+}
+
 auto Peer::start() -> void {
-  auto ret = _start_server();
-  std::cout << ret << '\n';
+  // _server_thread = std::thread(&Peer::_start_server, this);
+  _server_thread = std::thread(&Peer::_start_server2, this);
+}
+
+auto Peer::stop() -> void {
+  _is_listening = false;
+  _server_thread.join();
+}
+
+auto Peer::add_entry(int data) -> void { _data_entries.push_back(data); }
+
+auto Peer::_update_hash() {}
+
+auto Peer::_add_peer(const std::string &peer) -> void {
+  _routing_table.push_back(peer);
 }
