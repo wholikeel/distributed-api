@@ -171,8 +171,7 @@ auto Peer::_remove_from_epoll(int client_fd) const -> void {
 }
 
 auto Peer::start() -> void {
-  // _server_thread = std::thread(&Peer::_start_server, this);
-  _server_thread = std::thread(&Peer::_start_server2, this);
+  _server_thread = std::thread(&Peer::_start_server, this);
 }
 
 auto Peer::stop() -> void {
