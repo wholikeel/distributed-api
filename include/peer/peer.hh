@@ -55,6 +55,8 @@ private:
   bool _is_listening = false;
   std::thread _server_thread;
 
+  TcpConnectionHandler *_conn_handler = nullptr;
+
   auto _create_epoll(int socket_fd) const -> void;
   auto _add_to_epoll(int client_fd) const -> void;
   auto _remove_from_epoll(int client_fd) const -> void;

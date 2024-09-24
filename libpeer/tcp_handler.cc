@@ -10,21 +10,23 @@
 
 static constexpr auto bufsize = 1024;
 
+EchoHandler::EchoHandler(std::shared_ptr<EventLoop> event_loop, int client_fd)
+    : _client_fd{client_fd}, _ev(std::move(event_loop)) {}
 
-EchoHandler::EchoHandler(std::shared_ptr<EventLoop> event_loop, int client_fd) : _client_fd{client_fd}, _ev(std::move(event_loop)) {}
 auto EchoHandler::handler() -> void {
   auto buf = std::array<char, bufsize>();
   auto nbytes = recv(_client_fd, buf.data(), buf.size(), 0);
-  if (nbytes == -1) {
-      close(_client_fd);
+  // -1 for error, 0 for EOF
+  if (nbytes <= 0) {
+    std::osyncstream(std::cout) << "TCP connection closed\n";
+    close(_client_fd);
+    return;
   };
   auto msg = std::string(buf.data(), buf.data() + nbytes);
-  std::osyncstream(std::cout) << "recv: " << msg << '\n';
+  std::osyncstream(std::cout) << "Recieved: " << msg << '\n';
 
   send(_client_fd, msg.data(), msg.length(), 0);
-
 }
-
 
 TcpConnectionHandler::TcpConnectionHandler(
     std::shared_ptr<EventLoop> event_loop, int server_fd)
@@ -41,5 +43,5 @@ auto TcpConnectionHandler::handler() -> void {
   std::osyncstream(std::cout) << "Recieved TCP connection\n";
   auto *echo = new EchoHandler(_ev, conn);
   _ev->add_event_fd(conn, echo);
-  // close(conn);
 }
+

@@ -24,7 +24,10 @@ auto get_in_addr(struct sockaddr *sockaddr) -> void * {
 Peer::Peer(std::string port, int back_log)
     : _port(std::move(port)), _back_log(back_log) {}
 
-Peer::~Peer() { stop(); }
+Peer::~Peer() {
+    stop();
+    delete _conn_handler;
+}
 
 constexpr auto Peer::_get_hints(int ai_family, int ai_socktype, int ai_flags)
     -> struct addrinfo {
@@ -34,10 +37,6 @@ constexpr auto Peer::_get_hints(int ai_family, int ai_socktype, int ai_flags)
   return hints;
 }
 
-
-auto accept_tcp_connection() -> void {
-    std::osyncstream(std::cout) << "client connected\n";
-}
 
 auto Peer::_start_server() -> void {
   if (_is_listening) {
@@ -67,15 +66,13 @@ auto Peer::_start_server() -> void {
   _event_loop = std::make_shared<EpollEventLoop>(_epoll_fd);
     
 
-  auto *tcp = new TcpConnectionHandler(_event_loop, _server_fd);
-  _event_loop->add_event_fd(_server_fd, tcp);
+  _conn_handler = new TcpConnectionHandler(_event_loop, _server_fd);
+  _event_loop->add_event_fd(_server_fd, _conn_handler);
 
   _is_listening = true;
-  while (_is_listening) {
-    _event_loop->start(&_is_listening);
-  }
 
-  delete tcp;
+  _event_loop->start(&_is_listening);
+
 }
 
 
@@ -172,6 +169,7 @@ auto Peer::_remove_from_epoll(int client_fd) const -> void {
 
 auto Peer::start() -> void {
   _server_thread = std::thread(&Peer::_start_server, this);
+  // _start_server();
 }
 
 auto Peer::stop() -> void {
